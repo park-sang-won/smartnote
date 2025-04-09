@@ -5,6 +5,7 @@ export default function SummaryScreen({ navigation }) {
   const [inputText, setInputText] = useState('');
   const [summary, setSummary] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
 
   const handleSummarize = async () => {
     try {
@@ -19,7 +20,7 @@ export default function SummaryScreen({ navigation }) {
       // 텍스트를 문단 단위로 분리
       const paragraphs = inputText.split('\n').filter(p => p.trim().length > 0);
       
-      // 각 문단의 중요도를 계산
+      // 각 문단의 중요도를 계산 (개선된 알고리즘)
       const importantParagraphs = paragraphs
         .map(paragraph => ({
           text: paragraph,
@@ -30,21 +31,26 @@ export default function SummaryScreen({ navigation }) {
         .sort((a, b) => paragraphs.indexOf(a.text) - paragraphs.indexOf(b.text))
         .map(p => p.text.trim());
 
-      // 핵심 문장 추출
-      const sentences = inputText.split(/[.!?]+/).filter(s => s.trim().length > 0);
-      const keySentences = sentences
-        .map(sentence => ({
-          text: sentence,
-          importance: calculateSentenceImportance(sentence)
-        }))
-        .sort((a, b) => b.importance - a.importance)
-        .slice(0, Math.min(5, sentences.length))
-        .sort((a, b) => sentences.indexOf(a.text) - sentences.indexOf(b.text))
-        .map(s => s.text.trim() + '.');
+      // 문단 내에서 핵심 문장 추출
+      const summarySentences = [];
+      importantParagraphs.forEach(paragraph => {
+        const sentences = paragraph.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        const importantSentences = sentences
+          .map(sentence => ({
+            text: sentence,
+            importance: calculateSentenceImportance(sentence)
+          }))
+          .sort((a, b) => b.importance - a.importance)
+          .slice(0, Math.min(2, sentences.length))
+          .map(s => s.text.trim() + '.');
+        
+        summarySentences.push(...importantSentences);
+      });
 
-      // 요약 생성
-      const tempSummary = [...importantParagraphs, ...keySentences].join('\n\n');
+      // 요약 문장들을 자연스럽게 연결
+      const tempSummary = connectSentences(summarySentences);
       setSummary(tempSummary);
+      setShowQuestions(false);
     } catch (error) {
       console.error('요약 중 오류 발생:', error);
       alert('요약 중 오류가 발생했습니다.');
@@ -57,45 +63,78 @@ export default function SummaryScreen({ navigation }) {
     const sentences = paragraph.split(/[.!?]+/).filter(s => s.trim().length > 0);
     const wordCount = paragraph.split(/\s+/).length;
     
-    // 키워드 목록
+    // 확장된 키워드 목록
     const keywords = [
       '따라서', '그러므로', '결론적으로', '중요한', '핵심', '요약하면',
-      '결론', '요점', '주요', '특징', '장점', '단점', '의미', '영향'
+      '특히', '주목할', '결과적으로', '본질적으로', '궁극적으로',
+      '결론', '요점', '핵심적', '주요', '중요성', '의미',
+      '이유', '원인', '결과', '영향', '효과', '특징',
+      '개념', '정의', '설명', '예시', '비교', '대조'
     ];
     
     // 키워드 포함 여부 확인
-    const hasKeywords = keywords.some(keyword => 
+    const keywordCount = keywords.filter(keyword => 
       paragraph.toLowerCase().includes(keyword.toLowerCase())
-    );
+    ).length;
     
-    // 문단 위치에 따른 가중치
-    const positionWeight = 1;
+    // 문단 길이에 따른 가중치
+    const lengthWeight = wordCount > 20 && wordCount < 100 ? 1.5 : 0.5;
     
-    return (wordCount * 0.3) + (hasKeywords ? 2 : 0) + positionWeight + (sentences.length * 0.5);
+    // 문장 수에 따른 가중치
+    const sentenceCountWeight = sentences.length * 0.3;
+    
+    // 문단 위치에 따른 가중치 (첫 문단과 마지막 문단이 더 중요)
+    const positionWeight = 1.2;
+    
+    return (wordCount * 0.2) + (keywordCount * 2) + lengthWeight + sentenceCountWeight + positionWeight;
   };
 
   const calculateSentenceImportance = (sentence) => {
     const words = sentence.trim().split(/\s+/);
     const wordCount = words.length;
     
-    // 키워드 목록
+    // 문장 내 키워드 목록
     const keywords = [
       '따라서', '그러므로', '결론적으로', '중요한', '핵심', '요약하면',
-      '결론', '요점', '주요', '특징', '장점', '단점', '의미', '영향'
+      '특히', '주목할', '결과적으로', '본질적으로', '궁극적으로',
+      '결론', '요점', '핵심적', '주요', '중요성', '의미',
+      '이유', '원인', '결과', '영향', '효과', '특징',
+      '개념', '정의', '설명', '예시', '비교', '대조'
     ];
     
     // 키워드 포함 여부 확인
-    const hasKeywords = keywords.some(keyword => 
+    const keywordCount = keywords.filter(keyword => 
       sentence.toLowerCase().includes(keyword.toLowerCase())
-    );
+    ).length;
     
-    // 문장 위치에 따른 가중치
-    const positionWeight = 1;
+    // 문장 길이에 따른 가중치
+    const lengthWeight = wordCount > 5 && wordCount < 20 ? 1.5 : 0.5;
     
-    // 특수 문장 부호 포함 여부
-    const hasSpecialChars = /[;:()]/.test(sentence);
+    // 문장 내 특수 문자의 존재 여부
+    const hasSpecialChars = /[(),:;]/.test(sentence) ? 0.5 : 0;
     
-    return (wordCount * 0.3) + (hasKeywords ? 2 : 0) + positionWeight + (hasSpecialChars ? 1 : 0);
+    return (wordCount * 0.3) + (keywordCount * 2) + lengthWeight + hasSpecialChars;
+  };
+
+  const connectSentences = (sentences) => {
+    if (sentences.length === 0) return '';
+    
+    // 문장들을 자연스럽게 연결
+    let connectedText = sentences[0];
+    
+    for (let i = 1; i < sentences.length; i++) {
+      const prevSentence = sentences[i - 1];
+      const currentSentence = sentences[i];
+      
+      // 문장 간 연결을 고려하여 조사 추가
+      if (prevSentence.endsWith('다.') || prevSentence.endsWith('요.')) {
+        connectedText += ' ' + currentSentence;
+      } else {
+        connectedText += ' 그리고 ' + currentSentence;
+      }
+    }
+    
+    return connectedText;
   };
 
   return (

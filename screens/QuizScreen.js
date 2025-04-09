@@ -113,6 +113,33 @@ export default function QuizScreen({ route }) {
     return options.sort(() => Math.random() - 0.5);
   };
 
+  const loadSavedQuestions = async () => {
+    try {
+      setIsLoading(true);
+      const questions = await AsyncStorage.getItem('savedQuestions');
+      console.log('Loaded questions from storage:', questions);
+      
+      if (questions) {
+        try {
+          const parsedQuestions = JSON.parse(questions);
+          console.log('Successfully parsed questions:', parsedQuestions);
+          setSavedQuestions(parsedQuestions);
+        } catch (e) {
+          console.error('Error parsing saved questions:', e);
+          setSavedQuestions([]);
+        }
+      } else {
+        console.log('No saved questions found in storage');
+        setSavedQuestions([]);
+      }
+    } catch (error) {
+      console.error('Error loading saved questions:', error);
+      alert('저장된 문제를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
