@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 
-export default function SummaryScreen() {
+export default function SummaryScreen({ navigation }) {
   const [inputText, setInputText] = useState('');
   const [summary, setSummary] = useState('');
-  const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
 
   const handleSummarize = async () => {
     try {
@@ -17,25 +17,40 @@ export default function SummaryScreen() {
       setIsLoading(true);
       Keyboard.dismiss();
       
-      // 텍스트를 문장 단위로 분리
-      const sentences = inputText.split(/[.!?]+/).filter(s => s.trim().length > 0);
+      // 텍스트를 문단 단위로 분리
+      const paragraphs = inputText.split('\n').filter(p => p.trim().length > 0);
       
-      // 각 문장의 중요도를 계산 (단어 수, 키워드 포함 여부 등)
-      const importantSentences = sentences
-        .map(sentence => ({
-          text: sentence,
-          importance: calculateImportance(sentence)
+      // 각 문단의 중요도를 계산 (개선된 알고리즘)
+      const importantParagraphs = paragraphs
+        .map(paragraph => ({
+          text: paragraph,
+          importance: calculateImportance(paragraph)
         }))
         .sort((a, b) => b.importance - a.importance)
-        .slice(0, Math.min(3, sentences.length))
-        .sort((a, b) => sentences.indexOf(a.text) - sentences.indexOf(b.text))
-        .map(s => s.text.trim() + '.');
+        .slice(0, Math.min(3, paragraphs.length))
+        .sort((a, b) => paragraphs.indexOf(a.text) - paragraphs.indexOf(b.text))
+        .map(p => p.text.trim());
 
-      const tempSummary = importantSentences.join(' ');
+      // 문단 내에서 핵심 문장 추출
+      const summarySentences = [];
+      importantParagraphs.forEach(paragraph => {
+        const sentences = paragraph.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        const importantSentences = sentences
+          .map(sentence => ({
+            text: sentence,
+            importance: calculateSentenceImportance(sentence)
+          }))
+          .sort((a, b) => b.importance - a.importance)
+          .slice(0, Math.min(2, sentences.length))
+          .map(s => s.text.trim() + '.');
+        
+        summarySentences.push(...importantSentences);
+      });
+
+      // 요약 문장들을 자연스럽게 연결
+      const tempSummary = connectSentences(summarySentences);
       setSummary(tempSummary);
-      
-      // 요약 내용을 기반으로 문제 생성
-      generateQuestions(tempSummary);
+      setShowQuestions(false);
     } catch (error) {
       console.error('요약 중 오류 발생:', error);
       alert('요약 중 오류가 발생했습니다.');
@@ -44,89 +59,82 @@ export default function SummaryScreen() {
     }
   };
 
-  const generateQuestions = (summaryText) => {
-    const sentences = summaryText.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    const generatedQuestions = [];
-
-    // 각 문장에서 핵심 단어를 추출하여 문제 생성
-    sentences.forEach((sentence, index) => {
-      const words = sentence.trim().split(/\s+/);
-      const keyWords = words.filter(word => 
-        word.length > 2 && 
-        !['이', '가', '을', '를', '은', '는', '의', '에', '에서', '으로', '와', '과'].includes(word)
-      );
-
-      if (keyWords.length > 0) {
-        const question = {
-          id: index,
-          question: `${sentence.replace(keyWords[0], '_____')}`,
-          answer: keyWords[0],
-          options: generateOptions(keyWords[0], words)
-        };
-        generatedQuestions.push(question);
-      }
-    });
-
-    // 문제가 5개 미만이면 추가 문제 생성
-    while (generatedQuestions.length < 5 && generatedQuestions.length < sentences.length) {
-      const randomSentence = sentences[Math.floor(Math.random() * sentences.length)];
-      const words = randomSentence.trim().split(/\s+/);
-      const keyWords = words.filter(word => 
-        word.length > 2 && 
-        !['이', '가', '을', '를', '은', '는', '의', '에', '에서', '으로', '와', '과'].includes(word)
-      );
-
-      if (keyWords.length > 0) {
-        const question = {
-          id: generatedQuestions.length,
-          question: `${randomSentence.replace(keyWords[0], '_____')}`,
-          answer: keyWords[0],
-          options: generateOptions(keyWords[0], words)
-        };
-        generatedQuestions.push(question);
-      }
-    }
-
-    setQuestions(generatedQuestions);
+  const calculateImportance = (paragraph) => {
+    const sentences = paragraph.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const wordCount = paragraph.split(/\s+/).length;
+    
+    // 확장된 키워드 목록
+    const keywords = [
+      '따라서', '그러므로', '결론적으로', '중요한', '핵심', '요약하면',
+      '특히', '주목할', '결과적으로', '본질적으로', '궁극적으로',
+      '결론', '요점', '핵심적', '주요', '중요성', '의미',
+      '이유', '원인', '결과', '영향', '효과', '특징',
+      '개념', '정의', '설명', '예시', '비교', '대조'
+    ];
+    
+    // 키워드 포함 여부 확인
+    const keywordCount = keywords.filter(keyword => 
+      paragraph.toLowerCase().includes(keyword.toLowerCase())
+    ).length;
+    
+    // 문단 길이에 따른 가중치
+    const lengthWeight = wordCount > 20 && wordCount < 100 ? 1.5 : 0.5;
+    
+    // 문장 수에 따른 가중치
+    const sentenceCountWeight = sentences.length * 0.3;
+    
+    // 문단 위치에 따른 가중치 (첫 문단과 마지막 문단이 더 중요)
+    const positionWeight = 1.2;
+    
+    return (wordCount * 0.2) + (keywordCount * 2) + lengthWeight + sentenceCountWeight + positionWeight;
   };
 
-  const generateOptions = (correctAnswer, words) => {
-    const options = [correctAnswer];
-    const similarWords = words.filter(word => 
-      word.length > 2 && 
-      word !== correctAnswer &&
-      !['이', '가', '을', '를', '은', '는', '의', '에', '에서', '으로', '와', '과'].includes(word)
-    );
-
-    while (options.length < 4 && similarWords.length > 0) {
-      const randomIndex = Math.floor(Math.random() * similarWords.length);
-      if (!options.includes(similarWords[randomIndex])) {
-        options.push(similarWords[randomIndex]);
-      }
-      similarWords.splice(randomIndex, 1);
-    }
-
-    // 옵션 섞기
-    return options.sort(() => Math.random() - 0.5);
-  };
-
-  const calculateImportance = (sentence) => {
-    // 문장의 중요도를 계산하는 함수
+  const calculateSentenceImportance = (sentence) => {
     const words = sentence.trim().split(/\s+/);
     const wordCount = words.length;
     
-    // 키워드 목록 (실제로는 더 많은 키워드를 추가할 수 있습니다)
-    const keywords = ['따라서', '그러므로', '결론적으로', '중요한', '핵심', '요약하면'];
+    // 문장 내 키워드 목록
+    const keywords = [
+      '따라서', '그러므로', '결론적으로', '중요한', '핵심', '요약하면',
+      '특히', '주목할', '결과적으로', '본질적으로', '궁극적으로',
+      '결론', '요점', '핵심적', '주요', '중요성', '의미',
+      '이유', '원인', '결과', '영향', '효과', '특징',
+      '개념', '정의', '설명', '예시', '비교', '대조'
+    ];
     
     // 키워드 포함 여부 확인
-    const hasKeywords = keywords.some(keyword => 
+    const keywordCount = keywords.filter(keyword => 
       sentence.toLowerCase().includes(keyword.toLowerCase())
-    );
+    ).length;
     
-    // 문장 위치에 따른 가중치 (첫 문장과 마지막 문장이 더 중요)
-    const positionWeight = 1;
+    // 문장 길이에 따른 가중치
+    const lengthWeight = wordCount > 5 && wordCount < 20 ? 1.5 : 0.5;
     
-    return (wordCount * 0.3) + (hasKeywords ? 2 : 0) + positionWeight;
+    // 문장 내 특수 문자의 존재 여부
+    const hasSpecialChars = /[(),:;]/.test(sentence) ? 0.5 : 0;
+    
+    return (wordCount * 0.3) + (keywordCount * 2) + lengthWeight + hasSpecialChars;
+  };
+
+  const connectSentences = (sentences) => {
+    if (sentences.length === 0) return '';
+    
+    // 문장들을 자연스럽게 연결
+    let connectedText = sentences[0];
+    
+    for (let i = 1; i < sentences.length; i++) {
+      const prevSentence = sentences[i - 1];
+      const currentSentence = sentences[i];
+      
+      // 문장 간 연결을 고려하여 조사 추가
+      if (prevSentence.endsWith('다.') || prevSentence.endsWith('요.')) {
+        connectedText += ' ' + currentSentence;
+      } else {
+        connectedText += ' 그리고 ' + currentSentence;
+      }
+    }
+    
+    return connectedText;
   };
 
   return (
@@ -160,31 +168,15 @@ export default function SummaryScreen() {
             <View style={styles.summaryContainer}>
               <Text style={styles.summaryTitle}>📌 요약 결과</Text>
               <Text style={styles.summaryText}>{summary}</Text>
+              
+              <TouchableOpacity 
+                style={[styles.button, styles.generateButton]} 
+                onPress={() => navigation.navigate('Quiz', { summary })}
+              >
+                <Text style={styles.buttonText}>문제 생성하기</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
-
-          {questions.length > 0 && (
-            <View style={styles.questionsContainer}>
-              <Text style={styles.questionsTitle}>📝 생성된 문제</Text>
-              {questions.map((q, index) => (
-                <View key={q.id} style={styles.questionItem}>
-                  <Text style={styles.questionText}>
-                    {index + 1}. {q.question}
-                  </Text>
-                  <View style={styles.optionsContainer}>
-                    {q.options.map((option, optIndex) => (
-                      <Text key={optIndex} style={styles.optionText}>
-                        {String.fromCharCode(65 + optIndex)}. {option}
-                      </Text>
-                    ))}
-                  </View>
-                  <Text style={styles.answerText}>
-                    정답: {q.answer}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
         </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
@@ -215,7 +207,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4F46E5',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -244,42 +236,9 @@ const styles = StyleSheet.create({
   summaryText: {
     fontSize: 16,
     lineHeight: 24,
-  },
-  questionsContainer: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 15,
     marginBottom: 20,
   },
-  questionsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-  },
-  questionItem: {
-    marginBottom: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  questionText: {
-    fontSize: 16,
-    marginBottom: 10,
-    lineHeight: 24,
-  },
-  optionsContainer: {
-    marginLeft: 20,
-    marginBottom: 10,
-  },
-  optionText: {
-    fontSize: 14,
-    marginBottom: 5,
-    color: '#666',
-  },
-  answerText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: 'bold',
+  generateButton: {
+    backgroundColor: '#10B981',
   },
 });
