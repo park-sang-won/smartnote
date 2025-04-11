@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "smartnote-app",
-    "slug": "smartnote-app",
+    "name": "smartnote",
+    "slug": "smartnote",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,14 +12,26 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "이 앱은 이미지 텍스트 인식을 위해 카메라를 사용합니다.",
+        "NSPhotoLibraryUsageDescription": "이 앱은 이미지 텍스트 인식을 위해 사진첩 접근 권한이 필요합니다."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -10,6 +10,7 @@ export default function QuizScreen({ route }) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [showResults, setShowResults] = useState(false);
+  const [allQuestionsAnswered, setAllQuestionsAnswered] = useState(false);
 
   useEffect(() => {
     loadSavedQuizzes();
@@ -17,6 +18,12 @@ export default function QuizScreen({ route }) {
       generateQuestions(route.params.summary);
     }
   }, [route.params?.summary]);
+
+  useEffect(() => {
+    // 모든 문제가 답변되었는지 확인
+    const answered = Object.keys(selectedAnswers).length === questions.length;
+    setAllQuestionsAnswered(answered);
+  }, [selectedAnswers, questions]);
 
   const loadSavedQuizzes = async () => {
     try {
@@ -146,6 +153,14 @@ export default function QuizScreen({ route }) {
     return score;
   };
 
+  const handleSubmit = () => {
+    if (allQuestionsAnswered) {
+      setShowResults(true);
+    } else {
+      Alert.alert('알림', '모든 문제에 답변해주세요.');
+    }
+  };
+
   const renderQuestion = (question, index) => (
     <View key={index} style={styles.questionContainer}>
       <Text style={styles.questionText}>{`${index + 1}. ${question.question}`}</Text>
@@ -175,11 +190,10 @@ export default function QuizScreen({ route }) {
             <Text style={styles.questionText}>{`${index + 1}. ${question.question}`}</Text>
             <Text style={[
               styles.answerText,
-              selectedAnswers[index] !== undefined && 
               question.options[selectedAnswers[index]] === question.answer ? 
               styles.correctAnswer : styles.wrongAnswer
             ]}>
-              {`당신의 답: ${selectedAnswers[index] !== undefined ? question.options[selectedAnswers[index]] : '미응답'}`}
+              {`당신의 답: ${question.options[selectedAnswers[index]]}`}
             </Text>
             <Text style={styles.correctAnswerText}>
               {`정답: ${question.answer}`}
@@ -209,7 +223,11 @@ export default function QuizScreen({ route }) {
 
           <TouchableOpacity 
             style={[styles.button, isLoading && styles.buttonDisabled]} 
-            onPress={() => generateQuestions(inputText)}
+            onPress={() => {
+              setShowResults(false);
+              setSelectedAnswers({});
+              generateQuestions(inputText);
+            }}
             disabled={isLoading}
           >
             <Text style={styles.buttonText}>
@@ -224,10 +242,13 @@ export default function QuizScreen({ route }) {
                 <>
                   {questions.map((question, index) => renderQuestion(question, index))}
                   <TouchableOpacity
-                    style={styles.submitButton}
-                    onPress={() => setShowResults(true)}
+                    style={[styles.submitButton, !allQuestionsAnswered && styles.submitButtonDisabled]}
+                    onPress={handleSubmit}
+                    disabled={!allQuestionsAnswered}
                   >
-                    <Text style={styles.submitButtonText}>제출하기</Text>
+                    <Text style={styles.submitButtonText}>
+                      {allQuestionsAnswered ? '제출하기' : '모든 문제에 답변해주세요'}
+                    </Text>
                   </TouchableOpacity>
                 </>
               ) : (
@@ -322,6 +343,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#ccc',
   },
   resultsContainer: {
     padding: 20,
