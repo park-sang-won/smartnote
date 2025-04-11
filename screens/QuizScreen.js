@@ -7,6 +7,9 @@ export default function QuizScreen({ route }) {
   const [questions, setQuestions] = useState([]);
   const [savedQuizzes, setSavedQuizzes] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [showResults, setShowResults] = useState(false);
 
   useEffect(() => {
     loadSavedQuizzes();
@@ -38,47 +41,49 @@ export default function QuizScreen({ route }) {
     }
   };
 
-  const generateQuestions = (summaryText) => {
+  const generateQuestions = async (text) => {
     try {
       setIsLoading(true);
       
-      const sentences = summaryText.split(/[.!?]+/).filter(s => s.trim().length > 0);
-      const generatedQuestions = [];
-
-      // 각 문장에서 핵심 단어를 추출하여 문제 생성
-      sentences.forEach((sentence, index) => {
+      // 텍스트를 문장 단위로 분리
+      const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+      
+      // 핵심 단어 추출을 위한 함수
+      const extractKeyWords = (sentence) => {
         const words = sentence.trim().split(/\s+/);
-        const keyWords = words.filter(word => 
+        return words.filter(word => 
           word.length > 2 && 
           !['이', '가', '을', '를', '은', '는', '의', '에', '에서', '으로', '와', '과'].includes(word)
         );
+      };
 
+      const generatedQuestions = [];
+
+      // 각 문장에서 핵심 개념을 추출하여 문제 생성
+      for (const sentence of sentences) {
+        const keyWords = extractKeyWords(sentence);
         if (keyWords.length > 0) {
           const question = {
-            id: index,
-            question: `${sentence.replace(keyWords[0], '_____')}`,
+            id: generatedQuestions.length,
+            question: generateQuestionText(sentence, keyWords[0]),
             answer: keyWords[0],
-            options: generateOptions(keyWords[0], words)
+            options: generateOptions(keyWords[0], keyWords)
           };
           generatedQuestions.push(question);
         }
-      });
+      }
 
       // 문제가 5개 미만이면 추가 문제 생성
       while (generatedQuestions.length < 5 && generatedQuestions.length < sentences.length) {
         const randomSentence = sentences[Math.floor(Math.random() * sentences.length)];
-        const words = randomSentence.trim().split(/\s+/);
-        const keyWords = words.filter(word => 
-          word.length > 2 && 
-          !['이', '가', '을', '를', '은', '는', '의', '에', '에서', '으로', '와', '과'].includes(word)
-        );
-
+        const keyWords = extractKeyWords(randomSentence);
+        
         if (keyWords.length > 0) {
           const question = {
             id: generatedQuestions.length,
-            question: `${randomSentence.replace(keyWords[0], '_____')}`,
+            question: generateQuestionText(randomSentence, keyWords[0]),
             answer: keyWords[0],
-            options: generateOptions(keyWords[0], words)
+            options: generateOptions(keyWords[0], keyWords)
           };
           generatedQuestions.push(question);
         }
@@ -93,9 +98,20 @@ export default function QuizScreen({ route }) {
     }
   };
 
-  const generateOptions = (correctAnswer, words) => {
+  const generateQuestionText = (sentence, keyWord) => {
+    const questionTypes = [
+      `다음 설명에 해당하는 개념은? "${sentence}"`,
+      `"${sentence}" 이 설명하는 개념은?`,
+      `다음 설명이 나타내는 핵심 개념은? "${sentence}"`,
+      `다음 설명에서 가장 중요한 개념은? "${sentence}"`,
+      `다음 설명의 주제는? "${sentence}"`
+    ];
+    return questionTypes[Math.floor(Math.random() * questionTypes.length)];
+  };
+
+  const generateOptions = (correctAnswer, keyWords) => {
     const options = [correctAnswer];
-    const similarWords = words.filter(word => 
+    const similarWords = keyWords.filter(word => 
       word.length > 2 && 
       word !== correctAnswer &&
       !['이', '가', '을', '를', '은', '는', '의', '에', '에서', '으로', '와', '과'].includes(word)
@@ -113,31 +129,65 @@ export default function QuizScreen({ route }) {
     return options.sort(() => Math.random() - 0.5);
   };
 
-  const loadSavedQuestions = async () => {
-    try {
-      setIsLoading(true);
-      const questions = await AsyncStorage.getItem('savedQuestions');
-      console.log('Loaded questions from storage:', questions);
-      
-      if (questions) {
-        try {
-          const parsedQuestions = JSON.parse(questions);
-          console.log('Successfully parsed questions:', parsedQuestions);
-          setSavedQuestions(parsedQuestions);
-        } catch (e) {
-          console.error('Error parsing saved questions:', e);
-          setSavedQuestions([]);
-        }
-      } else {
-        console.log('No saved questions found in storage');
-        setSavedQuestions([]);
+  const handleAnswerSelect = (questionIndex, answerIndex) => {
+    setSelectedAnswers({
+      ...selectedAnswers,
+      [questionIndex]: answerIndex
+    });
+  };
+
+  const calculateScore = () => {
+    let score = 0;
+    Object.entries(selectedAnswers).forEach(([questionIndex, answerIndex]) => {
+      if (questions[questionIndex].answer === questions[questionIndex].options[answerIndex]) {
+        score++;
       }
-    } catch (error) {
-      console.error('Error loading saved questions:', error);
-      alert('저장된 문제를 불러오는 중 오류가 발생했습니다.');
-    } finally {
-      setIsLoading(false);
-    }
+    });
+    return score;
+  };
+
+  const renderQuestion = (question, index) => (
+    <View key={index} style={styles.questionContainer}>
+      <Text style={styles.questionText}>{`${index + 1}. ${question.question}`}</Text>
+      {question.options.map((option, optionIndex) => (
+        <TouchableOpacity
+          key={optionIndex}
+          style={[
+            styles.optionButton,
+            selectedAnswers[index] === optionIndex && styles.selectedOption
+          ]}
+          onPress={() => handleAnswerSelect(index, optionIndex)}
+        >
+          <Text style={styles.optionText}>{option}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderResults = () => {
+    const score = calculateScore();
+    return (
+      <View style={styles.resultsContainer}>
+        <Text style={styles.resultsText}>퀴즈 결과</Text>
+        <Text style={styles.scoreText}>{`점수: ${score}/${questions.length}`}</Text>
+        {questions.map((question, index) => (
+          <View key={index} style={styles.resultItem}>
+            <Text style={styles.questionText}>{`${index + 1}. ${question.question}`}</Text>
+            <Text style={[
+              styles.answerText,
+              selectedAnswers[index] !== undefined && 
+              question.options[selectedAnswers[index]] === question.answer ? 
+              styles.correctAnswer : styles.wrongAnswer
+            ]}>
+              {`당신의 답: ${selectedAnswers[index] !== undefined ? question.options[selectedAnswers[index]] : '미응답'}`}
+            </Text>
+            <Text style={styles.correctAnswerText}>
+              {`정답: ${question.answer}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
   };
 
   return (
@@ -170,23 +220,19 @@ export default function QuizScreen({ route }) {
           {questions.length > 0 && (
             <View style={styles.questionsContainer}>
               <Text style={styles.questionsTitle}>📝 생성된 문제</Text>
-              {questions.map((q, index) => (
-                <View key={q.id} style={styles.questionItem}>
-                  <Text style={styles.questionText}>
-                    {index + 1}. {q.question}
-                  </Text>
-                  <View style={styles.optionsContainer}>
-                    {q.options.map((option, optIndex) => (
-                      <Text key={optIndex} style={styles.optionText}>
-                        {String.fromCharCode(65 + optIndex)}. {option}
-                      </Text>
-                    ))}
-                  </View>
-                  <Text style={styles.answerText}>
-                    정답: {q.answer}
-                  </Text>
-                </View>
-              ))}
+              {!showResults ? (
+                <>
+                  {questions.map((question, index) => renderQuestion(question, index))}
+                  <TouchableOpacity
+                    style={styles.submitButton}
+                    onPress={() => setShowResults(true)}
+                  >
+                    <Text style={styles.submitButtonText}>제출하기</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                renderResults()
+              )}
             </View>
           )}
         </ScrollView>
@@ -245,29 +291,68 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 15,
   },
-  questionItem: {
+  questionContainer: {
     marginBottom: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   questionText: {
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: 'bold',
     marginBottom: 10,
-    lineHeight: 24,
   },
-  optionsContainer: {
-    marginLeft: 20,
-    marginBottom: 10,
+  optionButton: {
+    padding: 15,
+    marginVertical: 5,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  selectedOption: {
+    backgroundColor: '#d0d0d0',
   },
   optionText: {
-    fontSize: 14,
-    marginBottom: 5,
-    color: '#666',
+    fontSize: 16,
+  },
+  submitButton: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  resultsContainer: {
+    padding: 20,
+  },
+  resultsText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  scoreText: {
+    fontSize: 20,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  resultItem: {
+    marginBottom: 20,
   },
   answerText: {
-    fontSize: 14,
-    color: '#4F46E5',
-    fontWeight: 'bold',
+    fontSize: 16,
+    marginTop: 5,
+  },
+  correctAnswer: {
+    color: 'green',
+  },
+  wrongAnswer: {
+    color: 'red',
+  },
+  correctAnswerText: {
+    fontSize: 16,
+    color: 'green',
+    marginTop: 5,
   },
 });
